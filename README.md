@@ -69,6 +69,62 @@ The API speaks the contract; Salesforce keeps its own model
 A System API translates; it does not decide. Which status may follow which is the Order Process
 API's business; this API stores what it is given.
 
+## Data model (sales domain)
+
+Salesforce's own model, with Salesforce's naming. Only `Order` and `OrderItem` are simulated
+(backend-systems); `Account`, `Opportunity` and `Product` are Salesforce's, not simulated yet.
+Defined once in [`ai-intelligence-domain/docs/architecture/data_models.py`](https://github.com/azure-intelligence-domain/ai-intelligence-domain/blob/main/docs/architecture/data_models.py), which also writes the entities of EventCatalog.
+
+```mermaid
+erDiagram
+    Account {
+        string AccountId PK
+        string Name
+        string BillingCountryCode
+    }
+    Opportunity {
+        string OpportunityId
+        string AccountId FK
+        string StageName
+        number Amount
+        date CloseDate
+    }
+    SalesforceOrder {
+        string id
+        string OrderNumber PK
+        string AccountId FK
+        string OpportunityId FK
+        string Status
+        string Order_Status__c
+        string Payment_Status__c
+        string Channel__c
+        list OrderItems
+        string CurrencyIsoCode
+        number TotalAmount
+        string ShippingStreet
+        date Requested_Delivery_Date__c
+        string Idempotency_Key__c
+        datetime CreatedDate
+        datetime LastModifiedDate
+    }
+    SalesforceOrderItem {
+        integer OrderItemNumber
+        string Product2Id FK
+        integer Quantity
+        number UnitPrice
+    }
+    Product {
+        string Product2Id
+        string Name
+        string ProductCode
+    }
+    Opportunity }o--|| Account : "AccountId"
+    SalesforceOrder }o--|| Account : "AccountId"
+    SalesforceOrder }o--o| Opportunity : "OpportunityId"
+    SalesforceOrder ||--|{ SalesforceOrderItem : "OrderItems"
+    SalesforceOrderItem }o--|| Product : "Product2Id"
+```
+
 ## Pipeline
 
 `.github/workflows/deploy.yml`: contract check and tests, then on `main` (OIDC as
