@@ -1,0 +1,732 @@
+openapi: 3.0.3
+info:
+  title: '[Sales] Salesforce System API'
+  version: 1.0.0
+  description: 'Orders as Salesforce keeps them (Salesforce is the system of record for orders), translated to the
+    platform''s contract. Internal: only building blocks on the platform''s allow-list may call it, with an Entra
+    ID token. Salesforce assigns the order id (auto-number). Replace uses optimistic concurrency (ETag / If-Match).
+    This is a System API: it stores what it is given; the order domain''s rules live in the Order Process API.'
+  contact:
+    name: Sales Domain Team
+    url: https://github.com/azure-intelligence-domain/system-api-salesforce
+  license:
+    name: MIT
+    url: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/LICENSE
+  x-gateway: other
+x-gateway: other
+externalDocs:
+  description: EventCatalog entry of the sales domain
+  url: https://azure-intelligence-domain.github.io/eventcatalog/docs/domains/sales/1.0.0
+servers:
+- url: https://apim-intplat-demo.azure-api.net/salesforce
+  description: Gateway, product system-apis (internal callers only). No version in the URI.
+security:
+- platformToken: []
+tags:
+- name: Orders
+  description: Salesforce Order records.
+paths:
+  /orders:
+    x-summary: Orders
+    get:
+      tags:
+      - Orders
+      operationId: retrieveListOfOrders
+      summary: Retrieve List of Orders
+      description: Orders, newest first, optionally of one customer, with one status, or by the idempotency key
+        that created them.
+      parameters:
+      - $ref: '#/components/parameters/customerId'
+      - $ref: '#/components/parameters/status'
+      - $ref: '#/components/parameters/idempotencyKey'
+      - $ref: '#/components/parameters/offset'
+      - $ref: '#/components/parameters/limit'
+      - $ref: '#/components/parameters/correlationId'
+      responses:
+        '200':
+          description: A page of orders.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/orderList'
+              example:
+                _links:
+                  self:
+                    href: /orders?customerId=ACME&offset=0&limit=20
+                  first:
+                    href: /orders?customerId=ACME&limit=20
+                  last:
+                    href: /orders?customerId=ACME&offset=0&limit=20
+                totalCount: 1
+                _embedded:
+                  orders:
+                  - _links:
+                      self:
+                        href: /orders/4711
+                    orderId: '4711'
+                    recordId: 801Ad0000004711AAA
+                    customerId: ACME
+                    channel: salesforce
+                    status: placed
+                    paymentStatus: unpaid
+                    orderLines:
+                    - lineNumber: 1
+                      productId: SKU-1042
+                      quantity: 12
+                      unitPrice:
+                        value: 7000.0
+                        currency: EUR
+                    totalAmount:
+                      value: 84000.0
+                      currency: EUR
+                    deliveryAddress:
+                      street: Rue de la Loi 16
+                      postalCode: '1000'
+                      city: Brussels
+                      countryCode: BE
+                    requestedDeliveryDate: '2026-10-09'
+                    idempotencyKey: 0b7e2a4c-4711-4c1e-9d2a-acme0001
+                    createdAt: '2026-10-03T09:12:00Z'
+                    updatedAt: '2026-10-03T09:12:00Z'
+        '400':
+          description: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetail'
+              example:
+                type: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/docs/problems/invalid-request.md
+                title: Invalid Request
+                status: 400
+                detail: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+                instance: /orders/4711
+      x-business-keys:
+        customerid: query.customerId
+    post:
+      tags:
+      - Orders
+      operationId: createOrder
+      summary: Create Order
+      description: Creates an Order record. Salesforce assigns the order id (auto-number) and computes the total
+        amount.
+      parameters:
+      - $ref: '#/components/parameters/correlationId'
+      responses:
+        '201':
+          description: The created order.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/order'
+              example:
+                _links:
+                  self:
+                    href: /orders/4711
+                orderId: '4711'
+                recordId: 801Ad0000004711AAA
+                customerId: ACME
+                channel: salesforce
+                status: placed
+                paymentStatus: unpaid
+                orderLines:
+                - lineNumber: 1
+                  productId: SKU-1042
+                  quantity: 12
+                  unitPrice:
+                    value: 7000.0
+                    currency: EUR
+                totalAmount:
+                  value: 84000.0
+                  currency: EUR
+                deliveryAddress:
+                  street: Rue de la Loi 16
+                  postalCode: '1000'
+                  city: Brussels
+                  countryCode: BE
+                requestedDeliveryDate: '2026-10-09'
+                idempotencyKey: 0b7e2a4c-4711-4c1e-9d2a-acme0001
+                createdAt: '2026-10-03T09:12:00Z'
+                updatedAt: '2026-10-03T09:12:00Z'
+          headers:
+            Location:
+              description: URI of the new order.
+              schema:
+                type: string
+              example: /orders/4711
+            ETag:
+              description: Version of the order, for If-Match on the next replace.
+              schema:
+                type: string
+              example: '"0b00a8d1-0000-0d00-0000-670f2b7c0000"'
+        '400':
+          description: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetail'
+              example:
+                type: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/docs/problems/invalid-request.md
+                title: Invalid Request
+                status: 400
+                detail: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+                instance: /orders/4711
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/newOrder'
+            example:
+              customerId: ACME
+              channel: salesforce
+              status: placed
+              paymentStatus: unpaid
+              orderLines:
+              - lineNumber: 1
+                productId: SKU-1042
+                quantity: 12
+                unitPrice:
+                  value: 7000.0
+                  currency: EUR
+              deliveryAddress:
+                street: Rue de la Loi 16
+                postalCode: '1000'
+                city: Brussels
+                countryCode: BE
+              requestedDeliveryDate: '2026-10-09'
+              idempotencyKey: 0b7e2a4c-4711-4c1e-9d2a-acme0001
+      x-business-keys:
+        customerid: body.customerId
+  /orders/{orderId}:
+    x-summary: Order
+    get:
+      tags:
+      - Orders
+      operationId: retrieveOrder
+      summary: Retrieve Order
+      description: One Order record.
+      parameters:
+      - $ref: '#/components/parameters/orderId'
+      - $ref: '#/components/parameters/correlationId'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/order'
+              example:
+                _links:
+                  self:
+                    href: /orders/4711
+                orderId: '4711'
+                recordId: 801Ad0000004711AAA
+                customerId: ACME
+                channel: salesforce
+                status: placed
+                paymentStatus: unpaid
+                orderLines:
+                - lineNumber: 1
+                  productId: SKU-1042
+                  quantity: 12
+                  unitPrice:
+                    value: 7000.0
+                    currency: EUR
+                totalAmount:
+                  value: 84000.0
+                  currency: EUR
+                deliveryAddress:
+                  street: Rue de la Loi 16
+                  postalCode: '1000'
+                  city: Brussels
+                  countryCode: BE
+                requestedDeliveryDate: '2026-10-09'
+                idempotencyKey: 0b7e2a4c-4711-4c1e-9d2a-acme0001
+                createdAt: '2026-10-03T09:12:00Z'
+                updatedAt: '2026-10-03T09:12:00Z'
+          headers:
+            ETag:
+              description: Version of the order, for If-Match on the next replace.
+              schema:
+                type: string
+              example: '"0b00a8d1-0000-0d00-0000-670f2b7c0000"'
+        '400':
+          description: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetail'
+              example:
+                type: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/docs/problems/invalid-request.md
+                title: Invalid Request
+                status: 400
+                detail: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+                instance: /orders/4711
+        '404':
+          description: Salesforce has no order with this order id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetail'
+              example:
+                type: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/docs/problems/order-not-found.md
+                title: Order Not Found
+                status: 404
+                detail: Salesforce has no order with this order id.
+                instance: /orders/4711
+      x-business-keys:
+        orderid: path.orderId
+    put:
+      tags:
+      - Orders
+      operationId: replaceOrder
+      summary: Replace Order
+      description: Replaces the Order record, if it did not change since it was read (If-Match).
+      parameters:
+      - $ref: '#/components/parameters/orderId'
+      - $ref: '#/components/parameters/ifMatch'
+      - $ref: '#/components/parameters/correlationId'
+      responses:
+        '200':
+          description: The replaced order.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/order'
+              example:
+                _links:
+                  self:
+                    href: /orders/4711
+                orderId: '4711'
+                recordId: 801Ad0000004711AAA
+                customerId: ACME
+                channel: salesforce
+                status: placed
+                paymentStatus: unpaid
+                orderLines:
+                - lineNumber: 1
+                  productId: SKU-1042
+                  quantity: 12
+                  unitPrice:
+                    value: 7000.0
+                    currency: EUR
+                totalAmount:
+                  value: 84000.0
+                  currency: EUR
+                deliveryAddress:
+                  street: Rue de la Loi 16
+                  postalCode: '1000'
+                  city: Brussels
+                  countryCode: BE
+                requestedDeliveryDate: '2026-10-09'
+                idempotencyKey: 0b7e2a4c-4711-4c1e-9d2a-acme0001
+                createdAt: '2026-10-03T09:12:00Z'
+                updatedAt: '2026-10-03T09:12:00Z'
+          headers:
+            ETag:
+              description: Version of the order, for If-Match on the next replace.
+              schema:
+                type: string
+              example: '"0b00a8d1-0000-0d00-0000-670f2b7c0000"'
+        '400':
+          description: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetail'
+              example:
+                type: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/docs/problems/invalid-request.md
+                title: Invalid Request
+                status: 400
+                detail: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+                instance: /orders/4711
+        '404':
+          description: Salesforce has no order with this order id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetail'
+              example:
+                type: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/docs/problems/order-not-found.md
+                title: Order Not Found
+                status: 404
+                detail: Salesforce has no order with this order id.
+                instance: /orders/4711
+        '412':
+          description: The order changed since it was read (the If-Match ETag no longer matches). Read it again
+            and retry.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetail'
+              example:
+                type: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/docs/problems/order-changed.md
+                title: Order Changed Meanwhile
+                status: 412
+                detail: The order changed since it was read (the If-Match ETag no longer matches). Read it again
+                  and retry.
+                instance: /orders/4711
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/newOrder'
+            example:
+              customerId: ACME
+              channel: salesforce
+              status: cancelled
+              paymentStatus: unpaid
+              orderLines:
+              - lineNumber: 1
+                productId: SKU-1042
+                quantity: 12
+                unitPrice:
+                  value: 7000.0
+                  currency: EUR
+              deliveryAddress:
+                street: Rue de la Loi 16
+                postalCode: '1000'
+                city: Brussels
+                countryCode: BE
+              requestedDeliveryDate: '2026-10-09'
+              idempotencyKey: 0b7e2a4c-4711-4c1e-9d2a-acme0001
+              cancellationReason: Customer withdrew the order.
+      x-business-keys:
+        orderid: path.orderId
+components:
+  securitySchemes:
+    platformToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Entra ID token for the intplat-platform-apis application, of a runtime identity on the platform's
+        allow-list (internal-callers).
+  parameters:
+    orderId:
+      name: orderId
+      in: path
+      required: true
+      description: The order id (Salesforce OrderNumber), e.g. 4711.
+      schema:
+        type: string
+        pattern: ^[0-9]+$
+      example: '4711'
+    correlationId:
+      name: Correlation-Id
+      in: header
+      required: true
+      description: The business journey this call belongs to, for example ord-4711.
+      schema:
+        type: string
+        pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
+        maxLength: 64
+      example: ord-4711
+    ifMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: The ETag of the order as it was read.
+      schema:
+        type: string
+      example: '"0b00a8d1-0000-0d00-0000-670f2b7c0000"'
+    customerId:
+      name: customerId
+      in: query
+      required: false
+      description: Only orders of this customer (Salesforce AccountId).
+      schema:
+        type: string
+      example: ACME
+    status:
+      name: status
+      in: query
+      required: false
+      description: Only orders with this order status (Order_Status__c).
+      schema:
+        type: string
+      example: placed
+    idempotencyKey:
+      name: idempotencyKey
+      in: query
+      required: false
+      description: Only the order created with this idempotency key.
+      schema:
+        type: string
+      example: 0b7e2a4c-4711-4c1e-9d2a-acme0001
+    offset:
+      name: offset
+      in: query
+      required: false
+      description: Number of orders to skip.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      example: 0
+    limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of orders.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      example: 20
+  schemas:
+    money:
+      type: object
+      description: An amount of money.
+      required:
+      - value
+      - currency
+      properties:
+        value:
+          type: number
+          description: The amount.
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          description: ISO 4217 currency code.
+    deliveryAddress:
+      type: object
+      description: Delivery address (Salesforce Shipping fields).
+      required:
+      - street
+      - postalCode
+      - city
+      - countryCode
+      properties:
+        street:
+          type: string
+          description: Street and number.
+        postalCode:
+          type: string
+          description: Postal code.
+        city:
+          type: string
+          description: City.
+        countryCode:
+          type: string
+          pattern: ^[A-Z]{2}$
+          description: ISO 3166-1 alpha-2.
+    orderLine:
+      type: object
+      description: An OrderItem.
+      required:
+      - productId
+      - quantity
+      - unitPrice
+      properties:
+        lineNumber:
+          type: integer
+          minimum: 1
+          description: OrderItemNumber.
+        productId:
+          type: string
+          description: Product2Id.
+        quantity:
+          type: integer
+          minimum: 1
+          description: Quantity.
+        unitPrice:
+          $ref: '#/components/schemas/money'
+    newOrder:
+      type: object
+      description: The order's data, as the caller wants it stored. Salesforce computes the total amount; all lines
+        have the same currency.
+      required:
+      - customerId
+      - channel
+      - status
+      - paymentStatus
+      - orderLines
+      - deliveryAddress
+      properties:
+        customerId:
+          type: string
+          description: AccountId.
+        channel:
+          type: string
+          enum:
+          - salesforce
+          - webshop
+          - agent
+          description: Channel__c.
+        status:
+          type: string
+          description: 'Order_Status__c: the order domain''s status.'
+        paymentStatus:
+          type: string
+          enum:
+          - unpaid
+          - invoiced
+          - paid
+          description: Payment_Status__c.
+        orderLines:
+          type: array
+          minItems: 1
+          description: OrderItems.
+          items:
+            $ref: '#/components/schemas/orderLine'
+        deliveryAddress:
+          $ref: '#/components/schemas/deliveryAddress'
+        requestedDeliveryDate:
+          type: string
+          format: date
+          description: Requested_Delivery_Date__c. ISO 8601.
+        holdReason:
+          type: string
+          description: Hold_Reason__c.
+        cancellationReason:
+          type: string
+          description: Cancellation_Reason__c.
+        idempotencyKey:
+          type: string
+          description: Idempotency_Key__c.
+    order:
+      type: object
+      description: An Order record.
+      required:
+      - _links
+      - orderId
+      - recordId
+      - customerId
+      - channel
+      - status
+      - paymentStatus
+      - orderLines
+      - totalAmount
+      - deliveryAddress
+      - createdAt
+      - updatedAt
+      properties:
+        _links:
+          type: object
+          description: HAL links.
+          required:
+          - self
+          properties:
+            self:
+              $ref: '#/components/schemas/halLink'
+        orderId:
+          type: string
+          description: OrderNumber (auto-number).
+        recordId:
+          type: string
+          description: Salesforce record id.
+        customerId:
+          type: string
+          description: AccountId.
+        channel:
+          type: string
+          description: Channel__c.
+        status:
+          type: string
+          description: Order_Status__c.
+        paymentStatus:
+          type: string
+          description: Payment_Status__c.
+        orderLines:
+          type: array
+          description: OrderItems.
+          items:
+            $ref: '#/components/schemas/orderLine'
+        totalAmount:
+          $ref: '#/components/schemas/money'
+        deliveryAddress:
+          $ref: '#/components/schemas/deliveryAddress'
+        requestedDeliveryDate:
+          type: string
+          format: date
+          description: ISO 8601.
+        holdReason:
+          type: string
+          description: Hold_Reason__c.
+        cancellationReason:
+          type: string
+          description: Cancellation_Reason__c.
+        idempotencyKey:
+          type: string
+          description: Idempotency_Key__c.
+        createdAt:
+          type: string
+          format: date-time
+          description: CreatedDate. ISO 8601, UTC.
+        updatedAt:
+          type: string
+          format: date-time
+          description: LastModifiedDate. ISO 8601, UTC.
+    orderList:
+      type: object
+      description: A page of orders.
+      required:
+      - _links
+      - totalCount
+      - _embedded
+      properties:
+        _links:
+          type: object
+          description: self, first, last, prev, next.
+          required:
+          - self
+          properties:
+            self:
+              $ref: '#/components/schemas/halLink'
+            first:
+              $ref: '#/components/schemas/halLink'
+            last:
+              $ref: '#/components/schemas/halLink'
+            prev:
+              $ref: '#/components/schemas/halLink'
+            next:
+              $ref: '#/components/schemas/halLink'
+        totalCount:
+          type: integer
+          minimum: 0
+          description: Matching orders.
+        _embedded:
+          type: object
+          description: The orders on this page.
+          required:
+          - orders
+          properties:
+            orders:
+              type: array
+              description: Orders.
+              items:
+                $ref: '#/components/schemas/order'
+    halLink:
+      type: object
+      description: A HAL link.
+      required:
+      - href
+      properties:
+        href:
+          type: string
+          description: URI relative to the API root.
+    problemDetail:
+      type: object
+      description: Problem Details (RFC 9457).
+      required:
+      - title
+      - detail
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Problem type.
+        title:
+          type: string
+          description: Summary.
+        status:
+          type: integer
+          description: HTTP status.
+        detail:
+          type: string
+          description: This occurrence.
+        instance:
+          type: string
+          description: Request URI.
