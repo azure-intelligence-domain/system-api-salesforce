@@ -86,9 +86,11 @@ Defined once in [`ai-intelligence-domain/docs/architecture/data_models.py`](http
 ```mermaid
 erDiagram
     Account {
-        string AccountId PK
+        string AccountNumber
         string Name
-        string BillingCountryCode
+        string Industry
+        string ShippingCity
+        string CurrencyIsoCode
     }
     Opportunity {
         string OpportunityId
@@ -112,6 +114,8 @@ erDiagram
         string ShippingStreet
         date Requested_Delivery_Date__c
         string Idempotency_Key__c
+        string ERP_Order_Number__c
+        list Order_Milestones__r
         datetime CreatedDate
         datetime LastModifiedDate
     }
@@ -122,9 +126,11 @@ erDiagram
         number UnitPrice
     }
     Product {
-        string Product2Id
-        string Name
         string ProductCode
+        string Name
+        string Family
+        number StandardPrice
+        boolean IsActive
     }
     Opportunity }o--|| Account : "AccountId"
     SalesforceOrder }o--|| Account : "AccountId"
