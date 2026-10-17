@@ -6,6 +6,7 @@ import azure.functions as func
 import pytest
 
 import function_app as api
+import sample_data
 from salesforce import FIRST_ORDER_NUMBER, OrderChanged, record_id, to_platform, to_salesforce
 
 ORDER = {
@@ -43,6 +44,15 @@ class FakeSalesforce:
         record = {**self.records[number], **fields, "_etag": str(int(etag) + 1)}
         self.records[number] = record
         return record, record["_etag"]
+
+    def list_accounts(self):
+        return sorted(sample_data.ACCOUNTS, key=lambda a: a["Name"])
+
+    def get_account(self, customer_id):
+        return next((a for a in sample_data.ACCOUNTS if a["AccountNumber"] == customer_id), None)
+
+    def list_products(self):
+        return sample_data.PRODUCTS
 
     def list(self, customer_id=None, status=None, idempotency_key=None, offset=0, limit=20):
         found = [r for r in self.records.values()
@@ -157,3 +167,23 @@ def test_list_pages_with_hal_links(sf):
 
 def test_list_refuses_a_limit_over_100(sf):
     assert api.retrieve_list_of_orders(request("GET", "/orders", params={"limit": "500"}), sf).status_code == 400
+
+
+def test_references_and_timeline_are_kept(sf):
+    with_more = {**ORDER, "references": {"erpOrderNumber": "8000043217", "shipmentId": "SPD-004711"},
+                 "timeline": [{"fact": "OrderPlaced", "domain": "order", "occurredAt": "2026-10-03T09:12:00Z"}]}
+    created = json.loads(api.create_order(request("POST", "/orders", with_more), sf).get_body())
+    assert created["references"] == with_more["references"] and created["timeline"] == with_more["timeline"]
+    record = sf.records["4711"]
+    assert record["ERP_Order_Number__c"] == "8000043217" and record["Order_Milestones__r"][0]["Fact__c"] == "OrderPlaced"
+
+
+def test_accounts_and_products(sf):
+    accounts = json.loads(api.retrieve_list_of_accounts(request("GET", "/accounts"), sf).get_body())
+    assert accounts["totalCount"] == 4 and accounts["_embedded"]["accounts"][0]["customerId"] == "ACME"
+    acme = api.retrieve_account(request("GET", "/accounts/ACME", route={"customerId": "ACME"}), sf)
+    assert json.loads(acme.get_body())["shippingAddress"]["city"] == "Brussels"
+    assert api.retrieve_account(request("GET", "/accounts/X", route={"customerId": "X"}), sf).status_code == 404
+    products = json.loads(api.retrieve_list_of_products(request("GET", "/products"), sf).get_body())
+    press = next(p for p in products["_embedded"]["products"] if p["productId"] == "SKU-1042")
+    assert press["unitPrice"] == {"value": 7000.0, "currency": "EUR"}

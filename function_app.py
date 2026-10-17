@@ -11,7 +11,7 @@ import logging
 import azure.functions as func
 
 import contract
-from salesforce import OrderChanged, Salesforce, to_platform, to_salesforce
+from salesforce import OrderChanged, Salesforce, account, product, to_platform, to_salesforce
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)  # Easy Auth guards the door
 
@@ -142,6 +142,29 @@ def retrieve_list_of_orders(req: func.HttpRequest, sf: Salesforce) -> func.HttpR
     return hal(200, {"_links": links, "totalCount": total, "_embedded": {"orders": orders}})
 
 
+def retrieve_list_of_accounts(req: func.HttpRequest, sf: Salesforce) -> func.HttpResponse:
+    if refused := correlation_problem(req):
+        return refused
+    accounts = [account(record) for record in sf.list_accounts()]
+    return hal(200, {"_links": {"self": {"href": "/accounts"}}, "totalCount": len(accounts), "_embedded": {"accounts": accounts}})
+
+
+def retrieve_account(req: func.HttpRequest, sf: Salesforce) -> func.HttpResponse:
+    if refused := correlation_problem(req):
+        return refused
+    record = sf.get_account(req.route_params["customerId"])
+    if record is None:
+        return problem(404, "Account Not Found", f"Salesforce has no account {req.route_params['customerId']}.", "account-not-found", req.url)
+    return hal(200, account(record))
+
+
+def retrieve_list_of_products(req: func.HttpRequest, sf: Salesforce) -> func.HttpResponse:
+    if refused := correlation_problem(req):
+        return refused
+    products = [product(record) for record in sf.list_products()]
+    return hal(200, {"_links": {"self": {"href": "/products"}}, "totalCount": len(products), "_embedded": {"products": products}})
+
+
 # --- Routes (host.json: no route prefix, so the paths are the contract's) -----------------------
 
 
@@ -163,3 +186,18 @@ def retrieveOrder(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="orders/{orderId}", methods=["PUT"])
 def replaceOrder(req: func.HttpRequest) -> func.HttpResponse:
     return replace_order(req, salesforce())
+
+
+@app.route(route="accounts", methods=["GET"])
+def retrieveListOfAccounts(req: func.HttpRequest) -> func.HttpResponse:
+    return retrieve_list_of_accounts(req, salesforce())
+
+
+@app.route(route="accounts/{customerId}", methods=["GET"])
+def retrieveAccount(req: func.HttpRequest) -> func.HttpResponse:
+    return retrieve_account(req, salesforce())
+
+
+@app.route(route="products", methods=["GET"])
+def retrieveListOfProducts(req: func.HttpRequest) -> func.HttpResponse:
+    return retrieve_list_of_products(req, salesforce())

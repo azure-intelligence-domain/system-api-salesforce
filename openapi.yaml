@@ -1,11 +1,12 @@
 openapi: 3.0.3
 info:
   title: '[Sales] Salesforce System API'
-  version: 1.0.0
+  version: 1.1.0
   description: 'Orders as Salesforce keeps them (Salesforce is the system of record for orders), translated to the
     platform''s contract. Internal: only building blocks on the platform''s allow-list may call it, with an Entra
     ID token. Salesforce assigns the order id (auto-number). Replace uses optimistic concurrency (ETag / If-Match).
-    This is a System API: it stores what it is given; the order domain''s rules live in the Order Process API.'
+    This is a System API: it stores what it is given; the order domain''s rules live in the Order Process API. Since
+    1.1.0 also accounts (customers) and products with their list price.'
   contact:
     name: Sales Domain Team
     url: https://github.com/azure-intelligence-domain/system-api-salesforce
@@ -23,8 +24,12 @@ servers:
 security:
 - platformToken: []
 tags:
+- name: Accounts
+  description: Customers (Salesforce Accounts).
 - name: Orders
   description: Salesforce Order records.
+- name: Products
+  description: What can be sold (Product2 with its standard price).
 paths:
   /orders:
     x-summary: Orders
@@ -394,6 +399,159 @@ paths:
               cancellationReason: Customer withdrew the order.
       x-business-keys:
         orderid: path.orderId
+  /accounts:
+    x-summary: Accounts
+    get:
+      tags:
+      - Accounts
+      operationId: retrieveListOfAccounts
+      summary: Retrieve List of Accounts
+      description: All customers, by name (since 1.1.0).
+      parameters:
+      - $ref: '#/components/parameters/correlationId'
+      responses:
+        '200':
+          description: The accounts.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/accountList'
+              example:
+                _links:
+                  self:
+                    href: /accounts
+                totalCount: 1
+                _embedded:
+                  accounts:
+                  - _links:
+                      self:
+                        href: /accounts/ACME
+                    customerId: ACME
+                    name: ACME Corporation
+                    industry: Manufacturing
+                    shippingAddress:
+                      street: Rue de la Loi 16
+                      postalCode: '1000'
+                      city: Brussels
+                      countryCode: BE
+                    currency: EUR
+        '400':
+          description: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetail'
+              example:
+                type: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/docs/problems/invalid-request.md
+                title: Invalid Request
+                status: 400
+                detail: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+                instance: /accounts
+      x-business-keys: {}
+  /accounts/{customerId}:
+    x-summary: Account
+    get:
+      tags:
+      - Accounts
+      operationId: retrieveAccount
+      summary: Retrieve Account
+      description: One customer (since 1.1.0).
+      parameters:
+      - $ref: '#/components/parameters/accountCustomerId'
+      - $ref: '#/components/parameters/correlationId'
+      responses:
+        '200':
+          description: The account.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/account'
+              example:
+                _links:
+                  self:
+                    href: /accounts/ACME
+                customerId: ACME
+                name: ACME Corporation
+                industry: Manufacturing
+                shippingAddress:
+                  street: Rue de la Loi 16
+                  postalCode: '1000'
+                  city: Brussels
+                  countryCode: BE
+                currency: EUR
+        '400':
+          description: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetail'
+              example:
+                type: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/docs/problems/invalid-request.md
+                title: Invalid Request
+                status: 400
+                detail: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+                instance: /accounts/ACME
+        '404':
+          description: No account with this customer id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetail'
+              example:
+                type: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/docs/problems/account-not-found.md
+                title: Account Not Found
+                status: 404
+                detail: No account with this customer id.
+                instance: /accounts/ACME
+      x-business-keys:
+        customerid: path.customerId
+  /products:
+    x-summary: Products
+    get:
+      tags:
+      - Products
+      operationId: retrieveListOfProducts
+      summary: Retrieve List of Products
+      description: All active products with their standard price (since 1.1.0).
+      parameters:
+      - $ref: '#/components/parameters/correlationId'
+      responses:
+        '200':
+          description: The products.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/productList'
+              example:
+                _links:
+                  self:
+                    href: /products
+                totalCount: 1
+                _embedded:
+                  products:
+                  - _links:
+                      self:
+                        href: /products/SKU-1042
+                    productId: SKU-1042
+                    name: Hydraulic Press HP-1042
+                    description: 40-tonne hydraulic workshop press.
+                    family: Machinery
+                    unitPrice:
+                      value: 7000.0
+                      currency: EUR
+        '400':
+          description: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/problemDetail'
+              example:
+                type: https://github.com/azure-intelligence-domain/system-api-salesforce/blob/main/docs/problems/invalid-request.md
+                title: Invalid Request
+                status: 400
+                detail: The request does not match the contract, or the Correlation-Id header is missing or invalid.
+                instance: /products
+      x-business-keys: {}
 components:
   securitySchemes:
     platformToken:
@@ -475,6 +633,15 @@ components:
         maximum: 100
         default: 20
       example: 20
+    accountCustomerId:
+      name: customerId
+      in: path
+      required: true
+      description: The customer (AccountNumber), e.g. ACME.
+      schema:
+        type: string
+        pattern: ^[A-Z0-9-]+$
+      example: ACME
   schemas:
     money:
       type: object
@@ -586,6 +753,56 @@ components:
         idempotencyKey:
           type: string
           description: Idempotency_Key__c.
+        references:
+          type: object
+          description: Where the order lives in the other domains' systems, as the order domain records it from
+            their facts (since 1.1.0).
+          properties:
+            erpOrderNumber:
+              type: string
+              description: 'ERP_Order_Number__c: SAP sales order.'
+            invoiceNumber:
+              type: string
+              description: 'Invoice_Number__c: SAP invoice.'
+            creditNoteNumber:
+              type: string
+              description: 'Credit_Note_Number__c: SAP credit note, when the invoice was reversed.'
+            reservationId:
+              type: string
+              description: 'Reservation_Id__c: WMS stock reservation.'
+            warehouseId:
+              type: string
+              description: 'Warehouse__c: where the stock is reserved.'
+            shipmentId:
+              type: string
+              description: 'Shipment_Id__c: 3PL consignment.'
+            trackingNumber:
+              type: string
+              description: Tracking_Number__c.
+            partnerId:
+              type: string
+              description: 'Logistics_Partner__c: the 3PL partner.'
+        timeline:
+          type: array
+          description: 'Order_Milestones__r: every business fact about the order, oldest first (since 1.1.0).'
+          items:
+            type: object
+            description: An Order Milestone record.
+            required:
+            - fact
+            - domain
+            - occurredAt
+            properties:
+              fact:
+                type: string
+                description: 'Fact__c: the business fact, e.g. OrderPlaced or SalesOrderAccepted.'
+              domain:
+                type: string
+                description: 'Domain__c: the domain that published it, e.g. order or finance.'
+              occurredAt:
+                type: string
+                description: Occurred_At__c. ISO 8601, UTC.
+                format: date-time
     order:
       type: object
       description: An Order record.
@@ -659,6 +876,56 @@ components:
           type: string
           format: date-time
           description: LastModifiedDate. ISO 8601, UTC.
+        references:
+          type: object
+          description: Where the order lives in the other domains' systems, as the order domain records it from
+            their facts (since 1.1.0).
+          properties:
+            erpOrderNumber:
+              type: string
+              description: 'ERP_Order_Number__c: SAP sales order.'
+            invoiceNumber:
+              type: string
+              description: 'Invoice_Number__c: SAP invoice.'
+            creditNoteNumber:
+              type: string
+              description: 'Credit_Note_Number__c: SAP credit note, when the invoice was reversed.'
+            reservationId:
+              type: string
+              description: 'Reservation_Id__c: WMS stock reservation.'
+            warehouseId:
+              type: string
+              description: 'Warehouse__c: where the stock is reserved.'
+            shipmentId:
+              type: string
+              description: 'Shipment_Id__c: 3PL consignment.'
+            trackingNumber:
+              type: string
+              description: Tracking_Number__c.
+            partnerId:
+              type: string
+              description: 'Logistics_Partner__c: the 3PL partner.'
+        timeline:
+          type: array
+          description: 'Order_Milestones__r: every business fact about the order, oldest first (since 1.1.0).'
+          items:
+            type: object
+            description: An Order Milestone record.
+            required:
+            - fact
+            - domain
+            - occurredAt
+            properties:
+              fact:
+                type: string
+                description: 'Fact__c: the business fact, e.g. OrderPlaced or SalesOrderAccepted.'
+              domain:
+                type: string
+                description: 'Domain__c: the domain that published it, e.g. order or finance.'
+              occurredAt:
+                type: string
+                description: Occurred_At__c. ISO 8601, UTC.
+                format: date-time
     orderList:
       type: object
       description: A page of orders.
@@ -730,3 +997,129 @@ components:
         instance:
           type: string
           description: Request URI.
+    account:
+      type: object
+      description: 'An Account record: a customer.'
+      required:
+      - _links
+      - customerId
+      - name
+      - shippingAddress
+      - currency
+      properties:
+        _links:
+          type: object
+          description: HAL links.
+          required:
+          - self
+          properties:
+            self:
+              $ref: '#/components/schemas/halLink'
+        customerId:
+          type: string
+          description: 'AccountNumber: the platform''s customerid, e.g. ACME.'
+        name:
+          type: string
+          description: Name.
+        industry:
+          type: string
+          description: Industry.
+        shippingAddress:
+          $ref: '#/components/schemas/deliveryAddress'
+        currency:
+          type: string
+          description: 'CurrencyIsoCode: the customer''s currency.'
+          pattern: ^[A-Z]{3}$
+    accountList:
+      type: object
+      description: All accounts.
+      required:
+      - _links
+      - totalCount
+      - _embedded
+      properties:
+        _links:
+          type: object
+          description: HAL links.
+          required:
+          - self
+          properties:
+            self:
+              $ref: '#/components/schemas/halLink'
+        totalCount:
+          type: integer
+          minimum: 0
+          description: Number of accounts.
+        _embedded:
+          type: object
+          description: The accounts.
+          required:
+          - accounts
+          properties:
+            accounts:
+              type: array
+              description: Accounts.
+              items:
+                $ref: '#/components/schemas/account'
+    product:
+      type: object
+      description: A Product2 record with its standard price.
+      required:
+      - _links
+      - productId
+      - name
+      - unitPrice
+      properties:
+        _links:
+          type: object
+          description: HAL links.
+          required:
+          - self
+          properties:
+            self:
+              $ref: '#/components/schemas/halLink'
+        productId:
+          type: string
+          description: 'ProductCode, e.g. SKU-1042: the id every domain uses.'
+        name:
+          type: string
+          description: Name.
+        description:
+          type: string
+          description: Description.
+        family:
+          type: string
+          description: Family.
+        unitPrice:
+          $ref: '#/components/schemas/money'
+    productList:
+      type: object
+      description: All active products.
+      required:
+      - _links
+      - totalCount
+      - _embedded
+      properties:
+        _links:
+          type: object
+          description: HAL links.
+          required:
+          - self
+          properties:
+            self:
+              $ref: '#/components/schemas/halLink'
+        totalCount:
+          type: integer
+          minimum: 0
+          description: Number of products.
+        _embedded:
+          type: object
+          description: The products.
+          required:
+          - products
+          properties:
+            products:
+              type: array
+              description: Products.
+              items:
+                $ref: '#/components/schemas/product'

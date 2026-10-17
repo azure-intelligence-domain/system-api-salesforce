@@ -7,7 +7,8 @@ Flex Consumption.
 | File | What |
 |---|---|
 | [`openapi.yaml`](openapi.yaml) | The contract (adidas API guidelines, checked by the platform) |
-| [`function_app.py`](function_app.py) | The routes: create, retrieve, list, replace |
+| [`function_app.py`](function_app.py) | The routes: orders (create, retrieve, list, replace), accounts, products |
+| [`sample_data.py`](sample_data.py) | The customers and products Salesforce holds before the demo starts |
 | [`salesforce.py`](salesforce.py) | Salesforce's data model in Cosmos DB, and the mapping to the contract |
 | [`contract.py`](contract.py) | Request bodies are validated against `openapi.yaml` itself |
 | [`infra/`](infra/) | Function (Flex Consumption), storage, Easy Auth |
@@ -58,6 +59,10 @@ The API speaks the contract; Salesforce keeps its own model
 | `orderLines[]` | `OrderItems[]` (`Product2Id`, `Quantity`, `UnitPrice`) |
 | `totalAmount` | `TotalAmount` + `CurrencyIsoCode`, computed by Salesforce |
 | `deliveryAddress` | `ShippingStreet`, `ShippingPostalCode`, `ShippingCity`, `ShippingCountryCode` |
+| `references` | `ERP_Order_Number__c`, `Invoice_Number__c`, `Credit_Note_Number__c`, `Reservation_Id__c`, `Warehouse__c`, `Shipment_Id__c`, `Tracking_Number__c`, `Logistics_Partner__c` |
+| `timeline[]` | `Order_Milestones__r[]` (`Fact__c`, `Domain__c`, `Occurred_At__c`) |
+| account `customerId` | Account `AccountNumber` |
+| product `productId`, `unitPrice` | Product2 `ProductCode`, `StandardPrice` |
 
 | Operation | | Notes |
 |---|---|---|
@@ -65,6 +70,9 @@ The API speaks the contract; Salesforce keeps its own model
 | Retrieve Order | `GET /orders/{orderId}` | `ETag` for the next replace |
 | Retrieve List of Orders | `GET /orders?customerId=&status=&idempotencyKey=&offset=&limit=` | HAL paging, newest first |
 | Replace Order | `PUT /orders/{orderId}` with `If-Match` | `412` if the order changed meanwhile |
+| Retrieve List of Accounts | `GET /accounts` | The customers, by name (since 1.1.0) |
+| Retrieve Account | `GET /accounts/{customerId}` | One customer, with its shipping address (since 1.1.0) |
+| Retrieve List of Products | `GET /products` | Active products with their standard price (since 1.1.0) |
 
 A System API translates; it does not decide. Which status may follow which is the Order Process
 API's business; this API stores what it is given.

@@ -11,7 +11,14 @@ from azure.core import MatchConditions
 from azure.cosmos import CosmosClient, exceptions
 from azure.identity import DefaultAzureCredential
 
+import sample_data
+
 FIRST_ORDER_NUMBER = 4711
+REFERENCES = {  # the contract's order references ↔ custom fields on the Salesforce Order
+    "erpOrderNumber": "ERP_Order_Number__c", "invoiceNumber": "Invoice_Number__c", "creditNoteNumber": "Credit_Note_Number__c",
+    "reservationId": "Reservation_Id__c", "warehouseId": "Warehouse__c", "shipmentId": "Shipment_Id__c",
+    "trackingNumber": "Tracking_Number__c", "partnerId": "Logistics_Partner__c",
+}
 
 
 class OrderChanged(Exception):
@@ -61,6 +68,9 @@ def to_salesforce(order: dict) -> dict:
         "Hold_Reason__c": order.get("holdReason"),
         "Cancellation_Reason__c": order.get("cancellationReason"),
         "Idempotency_Key__c": order.get("idempotencyKey"),
+        **{field: order.get("references", {}).get(key) for key, field in REFERENCES.items()},
+        "Order_Milestones__r": [{"Fact__c": m["fact"], "Domain__c": m["domain"], "Occurred_At__c": m["occurredAt"]}
+                                for m in order.get("timeline", [])],
     }
 
 
@@ -94,6 +104,9 @@ def to_platform(record: dict) -> dict:
         "holdReason": record.get("Hold_Reason__c"),
         "cancellationReason": record.get("Cancellation_Reason__c"),
         "idempotencyKey": record.get("Idempotency_Key__c"),
+        "references": {key: record[field] for key, field in REFERENCES.items() if record.get(field)} or None,
+        "timeline": [{"fact": m["Fact__c"], "domain": m["Domain__c"], "occurredAt": m["Occurred_At__c"]}
+                     for m in record.get("Order_Milestones__r", [])] or None,
         "createdAt": record["CreatedDate"],
         "updatedAt": record["LastModifiedDate"],
     }
@@ -111,6 +124,8 @@ class Salesforce:
         database = CosmosClient(endpoint, credential).get_database_client("salesforce")
         self.orders = database.get_container_client("Order")
         self.counters = database.get_container_client("AutoNumber")
+        self.accounts = database.get_container_client("Account")
+        self.products = database.get_container_client("Product2")
 
     @classmethod
     def from_environment(cls) -> "Salesforce":
@@ -178,3 +193,38 @@ class Salesforce:
             parameters=parameters, enable_cross_partition_query=True,
         ))
         return page, total
+
+    # --- Accounts and products: Salesforce's reference data (sample_data.py on first read) --------
+
+    def _all(self, container, seed: "list[dict]") -> "list[dict]":
+        records = list(container.query_items("SELECT * FROM c", enable_cross_partition_query=True))
+        if not records:
+            for record in seed:
+                container.upsert_item(record)
+            records = seed
+        return records
+
+    def list_accounts(self) -> "list[dict]":
+        return sorted(self._all(self.accounts, sample_data.ACCOUNTS), key=lambda a: a["Name"])
+
+    def get_account(self, customer_id: str) -> dict | None:
+        return next((a for a in self.list_accounts() if a["AccountNumber"] == customer_id), None)
+
+    def list_products(self) -> "list[dict]":
+        return sorted((p for p in self._all(self.products, sample_data.PRODUCTS) if p["IsActive"]), key=lambda p: p["ProductCode"])
+
+
+def account(record: dict) -> dict:
+    """A Salesforce Account → the contract's account."""
+    return {"_links": {"self": {"href": f"/accounts/{record['AccountNumber']}"}}, "customerId": record["AccountNumber"],
+            "name": record["Name"], "industry": record.get("Industry"),
+            "shippingAddress": {"street": record["ShippingStreet"], "postalCode": record["ShippingPostalCode"],
+                                "city": record["ShippingCity"], "countryCode": record["ShippingCountryCode"]},
+            "currency": record["CurrencyIsoCode"]}
+
+
+def product(record: dict) -> dict:
+    """A Product2 with its standard price → the contract's product."""
+    return {"_links": {"self": {"href": f"/products/{record['ProductCode']}"}}, "productId": record["ProductCode"],
+            "name": record["Name"], "description": record.get("Description"), "family": record.get("Family"),
+            "unitPrice": {"value": record["StandardPrice"], "currency": record["CurrencyIsoCode"]}}
